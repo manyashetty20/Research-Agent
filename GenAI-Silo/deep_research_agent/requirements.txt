@@ -1,0 +1,28 @@
+# Agentic Deep Research System - DeepScholar
+# Python 3.10+
+
+# Core orchestration (no external graph lib to avoid SSL install issues)
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-community>=0.3.0
+
+# Retrieval & embeddings
+arxiv>=2.0.0
+requests>=2.31.0
+sentence-transformers>=3.0.0
+
+# LLM (OpenAI-compatible: OpenAI, Ollama, etc.)
+openai>=1.0.0
+
+# Local HF + LoRA training/inference
+transformers>=4.44.0
+datasets>=2.20.0
+accelerate>=0.33.0
+peft>=0.11.0
+torch>=2.3.0
+
+# Utilities
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
