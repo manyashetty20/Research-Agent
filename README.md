@@ -1,180 +1,175 @@
-# GenAI-Silo 🔬
-### Agentic Deep Research System — DeepScholar Benchmark
+# Research Agent 🔬
 
-An agentic pipeline that automatically generates **Related Work sections** for academic papers using a **Plan → Search → Read → Write → Verify** loop. Built to be evaluated on the [DeepScholar-Bench](https://github.com/guestrin-lab/deepscholar-bench) framework.
+A multi-agent pipeline that automatically generates **Related Work sections** for academic papers, evaluated against the **DeepScholar-Bench** benchmark.
 
----
-
-## How It Works
-
-```
-Query + Abstract
-      │
-      ▼
- [Planner Agent]  → generates sub-questions + search queries
-      │
-      ▼
- [Search Agent]   → queries arXiv + Semantic Scholar + Tavily
-      │            → expands queries using LLM
-      │            → reranks results using cross-encoder
-      ▼
- [Reader Agent]   → extracts key nuggets (facts, metrics, claims) from each paper
-      │
-      ▼
- [Synthesizer]    → writes thematic Related Work section in Markdown
-      │            → uses [Author et al.](https://arxiv.org/abs/ID) citations
-      ▼
- [Verifier Agent] → audits claim–citation pairs, corrects hallucinations
-      │
-      ▼
- intro.md + paper.csv  →  DeepScholar-Bench Eval
-```
+Built on top of [GenAI-Silo](https://github.com/manyashetty20/GenAI-Silo) and [DeepScholar-Bench](https://github.com/guestrin-lab/deepscholar-bench).
 
 ---
 
-## Benchmark Results
+## What This Does
 
-Evaluated on 10 queries from the DeepScholar-Bench dataset using `gpt-4o-mini` as judge:
+Given a paper title and abstract, the system:
+1. Plans a research strategy and generates search queries
+2. Fetches papers directly cited by the query paper via Semantic Scholar References API
+3. Retrieves additional relevant papers from arXiv, Semantic Scholar, and the web
+4. Extracts key findings (nuggets) from each paper
+5. Writes a structured, cited Related Work section in Markdown
+6. Verifies citations and corrects unsupported claims
+
+The output is scored by DeepScholar-Bench across four metrics.
+
+---
+
+## Workspace Layout
+
+```
+Research-Agent/
+├── GenAI-Silo/                        ← Our agentic system
+│   ├── deep_research_agent/
+│   │   ├── config.py                  ← All settings (LLM, retrieval, agents)
+│   │   ├── llm.py                     ← OpenAI client
+│   │   ├── run.py                     ← CLI entry point
+│   │   ├── .env                       ← API keys — never commit this
+│   │   ├── agents/
+│   │   │   ├── planner.py             ← Breaks query into search queries
+│   │   │   ├── search_agent.py        ← Retrieves + reranks papers
+│   │   │   ├── reader.py              ← Extracts nuggets from papers
+│   │   │   ├── synthesizer.py         ← Writes the Related Work section
+│   │   │   └── verifier.py            ← Audits and corrects citations
+│   │   ├── retrieval/
+│   │   │   ├── arxiv_client.py        ← arXiv search (rate-limit aware)
+│   │   │   ├── semantic_scholar.py    ← Semantic Scholar search
+│   │   │   └── embeddings.py          ← Reranker
+│   │   └── graph/
+│   │       └── workflow.py            ← Orchestrates the full pipeline
+│   └── results/
+│       └── deepscholar_base/          ← Pipeline outputs go here
+│           ├── 0/
+│           │   ├── intro.md           ← Generated Related Work section
+│           │   └── paper.csv         ← Retrieved papers
+│           ├── 1/ ...
+│
+├── deepscholar-bench/                 ← Evaluation framework
+│   ├── dataset/
+│   │   └── related_works_combined.csv ← 6,323 ground-truth papers
+│   └── eval/                          ← Scoring scripts
+│
+├── eval_outputs/                      ← Eval scores saved here
+├── run_batch.py                       ← Runs pipeline on multiple queries
+└── venv/                              ← Python virtual environment
+```
+
+---
+
+## Current Scores
+
+Evaluated on 10 queries using `gpt-4o-mini` as judge:
 
 | Metric | Score | What it measures |
 |---|---|---|
-| **organization** | 0.65 | Structure and logical flow of the Related Work section |
-| **nugget_coverage** | 0.17 | Key facts/findings captured from ground-truth papers |
-| **reference_coverage** | 0.06 | Overlap with exact ground-truth references |
-| **cite_p** | 0.24 | Citation precision — claims supported by cited papers |
+| **organization** | 0.55 | How well-structured the output is |
+| **nugget_coverage** | 0.11 | Key facts captured from ground-truth papers |
+| **reference_coverage** | 0.25 | Overlap with exact ground-truth references |
+| **cite_p** | 0.28 | Are cited papers actually supporting the claims? |
+
+### Score History
+
+| Run | Key Change | organization | nugget_coverage | reference_coverage | cite_p |
+|---|---|---|---|---|---|
+| 1 | Everything broken | 0 | 0 | 0 | 0 |
+| 2 | First working run | 0.55 | 0.16 | 0.00 | 0.13 |
+| 3 | Fixed OpenAI backend | 0.55 | 0.16 | 0.00 | 0.16 |
+| 4 | Dynamic relevance scoring | 0.40 | 0.12 | 0.03 | 0.24 |
+| 5 | Thematic subsections | 0.50 | 0.17 | 0.03 | 0.20 |
+| 6 | End-date filtering | 0.55 | 0.13 | 0.03 | 0.19 |
+| 7 | Abstract in query | 0.65 | 0.14 | 0.06 | 0.18 |
+| 8 | arXiv rate limit fix | 0.60 | 0.10 | 0.05 | 0.23 |
+| 9 | S2 References API | 0.55 | 0.11 | **0.25** | **0.28** |
+
+> reference_coverage jumped 4x (0.06 → 0.25) by directly fetching papers cited by the query paper via Semantic Scholar's References API.
 
 ---
 
-## Project Structure
-
-```
-GenAI-Silo/
-└── deep_research_agent/
-    ├── config.py               # LLM, retrieval, agent settings
-    ├── llm.py                  # LLM client (OpenAI)
-    ├── run.py                  # CLI entry point
-    ├── .env                    # API keys (never commit this)
-    ├── agents/
-    │   ├── planner.py          # Query → sub-questions + search queries
-    │   ├── search_agent.py     # arXiv + Semantic Scholar + Tavily + rerank
-    │   ├── reader.py           # Nugget extraction from papers
-    │   ├── synthesizer.py      # Cited Markdown report writer
-    │   └── verifier.py         # Claim–citation auditor
-    ├── retrieval/
-    │   ├── arxiv_client.py     # arXiv API client (rate-limit aware)
-    │   ├── semantic_scholar.py # Semantic Scholar API (returns arXiv IDs)
-    │   └── embeddings.py       # Sentence-transformer embeddings + reranker
-    ├── graph/
-    │   └── workflow.py         # Orchestrates the full pipeline
-    └── training/
-        ├── prepare_writer_dataset.py
-        └── train_lora_writer.py
-```
-
----
-
-## Setup
+## Setup (Do This Once)
 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/manyashetty20/GenAI-Silo.git
-cd GenAI-Silo
+git clone https://github.com/manyashetty20/Research-Agent.git
+cd Research-Agent
 ```
 
 ### 2. Create virtual environment
 
 ```bash
 python -m venv venv
-source venv/bin/activate        # Mac/Linux
-# venv\Scripts\activate         # Windows
-pip install -r deep_research_agent/requirements.txt
+source venv/bin/activate          # Mac/Linux
+# venv\Scripts\activate           # Windows
 ```
 
-### 3. Set up API keys
+### 3. Install dependencies
 
-Create `deep_research_agent/.env`:
+```bash
+pip install -r GenAI-Silo/deep_research_agent/requirements.txt
+pip install -r deepscholar-bench/requirements.txt
+```
+
+### 4. Set up API keys
+
+Create `GenAI-Silo/deep_research_agent/.env`:
 
 ```env
 OPENAI_API_KEY=sk-...
 TAVILY_API_KEY=tvly-...
 ```
 
-> **Important:** Never commit your `.env` file. It's already in `.gitignore`.
-
-### 4. Set up DeepScholar-Bench (for evaluation)
+Add to your shell so you don't have to export every time:
 
 ```bash
-# From the parent directory (one level above GenAI-Silo)
-git clone https://github.com/guestrin-lab/deepscholar-bench.git
+echo 'export OPENAI_API_KEY="sk-..."' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-### 5. Download NLTK data (required for eval)
+### 5. Download NLTK data
 
 ```bash
 python3 -c "import nltk; nltk.download('punkt_tab')"
 ```
 
----
+### 6. Apply the eval parser fix
 
-## Configuration
-
-Edit `deep_research_agent/config.py` to tune the system:
+Open `deepscholar-bench/eval/parsers/deepscholar_base.py`, find `_load_file()` and add one line after `self.clean_text, self.docs = self._to_autoais(...)`:
 
 ```python
-@dataclass
-class LLMConfig:
-    backend: str = "openai"
-    model: str = "gpt-4o-mini"       # use gpt-4o for better quality
-    base_url: str = "https://api.openai.com/v1"
-    api_key: str = os.getenv("OPENAI_API_KEY")
-
-@dataclass
-class RetrievalConfig:
-    max_arxiv_results: int = 15
-    max_semantic_scholar_results: int = 15
-    top_k_after_rerank: int = 15      # increase for more papers
-    max_tavily_results: int = 8
+self.citations_for_cite_quality = [
+    (doc.get("title", ""), doc.get("sent", ""))
+    for doc in self.docs
+]
 ```
+
+> This fixes a bug in the original eval code that causes `cite_p` to crash.
 
 ---
 
-## Usage
+## Running the System
 
-### Run a single query
+Every time you work on this, start from the repo root with the venv active:
 
 ```bash
-cd GenAI-Silo
-python -m deep_research_agent.run \
-  --query "Universal Domain Adaptation for Semantic Segmentation" \
-  --end-date 2025-05-28 \
-  --output report.md
+source venv/bin/activate
 ```
 
-### Run batch for DeepScholar evaluation
-
-From the **parent directory** (one level above `GenAI-Silo`):
+### Full pipeline + eval (the usual flow)
 
 ```bash
+# Step 1 — clear old results
+rm -rf GenAI-Silo/results/deepscholar_base/
+
+# Step 2 — run pipeline for 10 queries (takes ~15-20 min)
 python run_batch.py
-```
 
-This reads the first 10 queries from the DeepScholar dataset and saves outputs to:
-```
-GenAI-Silo/results/deepscholar_base/
-    0/
-        intro.md      ← generated Related Work section
-        paper.csv     ← retrieved papers (id, title, snippet)
-    1/
-    2/ ...
-```
-
-### Run evaluation
-
-```bash
+# Step 3 — run evaluation
 cd deepscholar-bench
-export OPENAI_API_KEY="sk-..."
-
 python -m eval.main \
   --modes deepscholar_base \
   --evals organization nugget_coverage reference_coverage cite_p \
@@ -182,87 +177,38 @@ python -m eval.main \
   --output-folder ../eval_outputs \
   --dataset-path dataset/related_works_combined.csv \
   --model-name gpt-4o-mini
+
+# Step 4 — go back to root when done
+cd ..
+```
+
+### Test a single query
+
+```bash
+cd GenAI-Silo
+python -m deep_research_agent.run \
+  --query "Universal Domain Adaptation for Semantic Segmentation" \
+  --end-date 2025-05-28 \
+  --arxiv-id 2505.22458v1 \
+  --output report.md
+cd ..
 ```
 
 ---
 
-## Output Format
+## Key Files to Know
 
-Each generated `intro.md` uses markdown hyperlink citations:
+If you're making changes, these are the files that matter most:
 
-```markdown
-## Domain Adaptation Methods
-
-Recent work on UDA for semantic segmentation has focused on pseudo-label refinement.
-[Pan et al.](https://arxiv.org/abs/2211.07525) propose MoDA, which uses object motion
-cues to align source and target domains, achieving significant improvements on
-GTA5→Cityscapes benchmarks.
-
-[Zhao et al.](https://arxiv.org/abs/2301.12345) extend this with a self-training
-framework that combines contrastive learning with Fourier-based style adaptation...
-```
-
-And `paper.csv`:
-```
-id,title,snippet
-2211.07525,MoDA: Leveraging Motion Priors...,"Abstract text..."
-```
-
----
-
-## run_batch.py
-
-Place this file in the **parent directory** (alongside `GenAI-Silo/` and `deepscholar-bench/`):
-
-```python
-import csv
-import subprocess
-import sys
-
-DATASET = "deepscholar-bench/dataset/related_works_combined.csv"
-OUTPUT_DIR = "results/deepscholar_base"
-NUM_QUERIES = 10
-
-queries = []
-with open(DATASET) as f:
-    reader = csv.DictReader(f)
-    for i, row in enumerate(reader):
-        if i >= NUM_QUERIES:
-            break
-        pub_date = row.get("publication_date", "")[:10]
-        queries.append((
-            i,
-            row["arxiv_id"],
-            row["title"].replace("\n", " ").strip(),
-            row["abstract"].replace("\n", " ").strip(),
-            pub_date
-        ))
-
-for query_id, arxiv_id, title, abstract, pub_date in queries:
-    print(f"\n{'='*60}")
-    print(f"Running query {query_id}: {title}")
-    print(f"End date: {pub_date}")
-    print(f"{'='*60}")
-
-    full_query = f"{title}. {abstract[:300]}"
-
-    cmd = [
-        sys.executable, "-m", "deep_research_agent.run",
-        "--query", full_query,
-        "--output-dir", OUTPUT_DIR,
-        "--query-id", str(query_id),
-    ]
-
-    if pub_date and len(pub_date) == 10:
-        cmd += ["--end-date", pub_date]
-
-    result = subprocess.run(cmd, cwd="GenAI-Silo")
-
-    if result.returncode != 0:
-        print(f"WARNING: query {query_id} failed, skipping...")
-
-print("\nDone! Now run eval.")
-```
+| File | What to change here |
+|---|---|
+| `GenAI-Silo/deep_research_agent/config.py` | LLM model, number of papers to retrieve |
+| `GenAI-Silo/deep_research_agent/agents/planner.py` | How search queries are generated |
+| `GenAI-Silo/deep_research_agent/agents/search_agent.py` | Retrieval logic, S2 references, query expansion |
+| `GenAI-Silo/deep_research_agent/retrieval/arxiv_client.py` | arXiv search, rate limiting |
+| `GenAI-Silo/deep_research_agent/retrieval/semantic_scholar.py` | Semantic Scholar search |
+| `GenAI-Silo/deep_research_agent/agents/synthesizer.py` | How the Related Work is written |
+| `run_batch.py` | Number of queries, dataset used |
 
 ---
 
@@ -270,30 +216,23 @@ print("\nDone! Now run eval.")
 
 | Problem | Fix |
 |---|---|
-| `cite_p = 0` | Check `intro.md` uses `[Author](https://arxiv.org/abs/ID)` format, not `[1]` |
-| `No results to save` | Make sure `--input-folder` points to `results/deepscholar_base` not its parent |
-| `ArXiv rate limit (429)` | The client auto-waits and retries. If it keeps failing, wait a few minutes and re-run |
+| All scores are 0 | Make sure `--input-folder` ends with `/deepscholar_base` not its parent |
+| `cite_p = 0` | Check `intro.md` uses `[Author](https://arxiv.org/abs/ID)` not `[1]` style |
 | `OPENAI_API_KEY not set` | Run `export OPENAI_API_KEY="sk-..."` or add to `~/.zshrc` |
+| arXiv rate limits (429/503) | Client retries automatically — just wait, it will continue |
+| S2 rate limits (429) | Client retries with backoff — just wait, it will continue |
 | `punkt_tab not found` | Run `python3 -c "import nltk; nltk.download('punkt_tab')"` |
-| `citations_for_cite_quality is None` | Apply the fix in `deepscholar-bench/eval/parsers/deepscholar_base.py` — see Technical Report |
+| `cd: no such file or directory` | Check `pwd` — you are probably already inside that folder |
+| Query failed, skipping | Check your OpenAI key is valid and has credits |
 
 ---
 
-## Known Limitations
+## Things to Improve
 
-- **reference_coverage is low (0.06)** — the system retrieves topically relevant papers but rarely the exact papers cited by the original authors. Improving this requires either direct reference lookup via Semantic Scholar's references API or training a specialized retriever.
-- **arXiv rate limits** — running many queries in quick succession triggers HTTP 429. The client handles this automatically but slows down the pipeline.
-- **10-query evaluation** — scores have high variance at this sample size. Run 50+ queries for reliable numbers.
+Open areas if you want to contribute:
 
----
-
-## Dependencies
-
-- `openai` — LLM backend
-- `arxiv` — arXiv search client
-- `sentence-transformers` — embeddings + reranker
-- `tavily-python` — web search
-- `langchain-openai` — LLM invocation
-- `pandas` — data handling
-
-Install all: `pip install -r deep_research_agent/requirements.txt`
+- **nugget_coverage** — reference papers fetched from S2 sometimes lack abstracts, giving the synthesizer less content. Supplement missing abstracts by fetching them separately.
+- **organization** — recover the 0.65 score from Run 7 while keeping the reference_coverage gains.
+- **More queries** — currently evaluating on 10. Run 50+ for reliable scores.
+- **Better reranking** — try a domain-specific reranker trained on scientific text.
+- **LoRA fine-tuning** — the `training/` folder has scripts to fine-tune a local writer model on the DeepScholar dataset.
