@@ -1,6 +1,7 @@
 import csv
 import subprocess
 import sys
+import time
 
 DATASET = "deepscholar-bench/dataset/related_works_combined.csv"
 OUTPUT_DIR = "results/deepscholar_base"
@@ -27,7 +28,6 @@ for query_id, arxiv_id, title, abstract, pub_date in queries:
     print(f"End date: {pub_date}")
     print(f"{'='*60}")
 
-    # Combine title + abstract as the query for richer retrieval
     full_query = f"{title}. {abstract[:300]}"
 
     cmd = [
@@ -35,6 +35,7 @@ for query_id, arxiv_id, title, abstract, pub_date in queries:
         "--query", full_query,
         "--output-dir", OUTPUT_DIR,
         "--query-id", str(query_id),
+        "--arxiv-id", arxiv_id,
     ]
 
     if pub_date and len(pub_date) == 10:
@@ -44,5 +45,7 @@ for query_id, arxiv_id, title, abstract, pub_date in queries:
 
     if result.returncode != 0:
         print(f"WARNING: query {query_id} failed, skipping...")
+
+    time.sleep(5)  # avoid S2 rate limits between queries
 
 print("\nDone! Now run eval.")
